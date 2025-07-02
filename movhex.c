@@ -270,7 +270,7 @@ static inline uint16_t unwrapLow(uint32_t data) {
 /*Operations*/
 void init(uint32_t columns, uint32_t rows);
 void changeCost(int x, int y, int8_t param, uint16_t radius);
-void toggleAirRoute(int16_t x1, int16_t y1, int16_t x2, int16_t y2);
+void toggleAirRoute(int32_t x1, int32_t y1, int32_t x2, int32_t y2);
 void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2);
 
 /*Prototype*/
@@ -538,7 +538,7 @@ static inline int floorDiv(int a, int b)
     return (a >= 0) ?  a / b : -(( -a + b-1) / b);
 }
 
-void toggleAirRoute(int16_t x1, int16_t y1, int16_t x2, int16_t y2) {
+void toggleAirRoute(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
     uint32_t hex1Index = offsetToLinear(x1, y1);
     uint32_t hex2Index = offsetToLinear(x2, y2);
 

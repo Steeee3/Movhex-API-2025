@@ -1,0 +1,8 @@
+\babel@toc {italian}{}\relax 
+\babel@toc {italian}{}\relax 
+\contentsline {section}{\numberline {1}Panoramica introduttiva}{1}{}%
+\contentsline {section}{\numberline {2}Struttura costitutiva}{1}{}%
+\contentsline {subsection}{\numberline {2.1}Costruzione griglia}{1}{}%
+\contentsline {subsection}{\numberline {2.2}Percorsi}{2}{}%
+\contentsline {section}{\numberline {3}Operazioni eseguibili}{3}{}%
+\contentsline {subsection}{\numberline {3.1}Spunto di ottimizzazione}{4}{}%

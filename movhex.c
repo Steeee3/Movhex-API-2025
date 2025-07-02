@@ -30,13 +30,17 @@ static inline void swap(uint32_t *x1, uint32_t *x2) {
 /*Grid and hexagons*/
 
 typedef struct {
-    uint16_t landCost;
+    /* ------------- hexagon data ------------- */
+    uint32_t landCost;
     uint8_t airRoutesNum;
     uint32_t airRoutes[5];
     uint32_t airRoutesCost[5];
     uint8_t color;
+
+    /* ------------- for fast queries ------------- */
     uint32_t distance;
     uint32_t predecessor;
+    uint32_t version;
 } Hex;
 
 Hex* grid = NULL;
@@ -451,7 +455,7 @@ void changeCost(int x, int y, int8_t param, uint16_t radius) {
     Axial coord = offsetToAxial((uint16_t) x, (uint16_t) y);
     int sourceIndex = axialToLinear(coord.r, coord.q);
 
-    if (radius == 0 || sourceIndex == UINT32_MAX) {
+    if (radius == 0 || param < -10 || param > 10 || sourceIndex == UINT32_MAX) {
         printf("KO\n");
         return;
     } else {
@@ -524,8 +528,8 @@ void changeHexCost(Hex* hexagon, int8_t param, uint16_t radius) {
             hexagon->airRoutesCost[i] = newCost;
         }
 
-        if (newCost < 0) {
-            hexagon->airRoutesCost[i] = 0;
+        if (newCost <= 0) {
+            hexagon->airRoutesCost[i] = 1;
         } else if (newCost > 100) {
             hexagon->airRoutesCost[i] = 100;
         } else {

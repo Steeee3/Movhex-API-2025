@@ -47,7 +47,7 @@ Hex* grid = NULL;
 uint32_t columnsSize = 0;
 uint32_t rowsSize = 0;
 uint32_t size = 0;
-#define HEX(c, r)  grid[(size_t)(r) * columns + (c)]
+uint32_t currentVersion = 0;
 
 typedef struct {
     Axial adj[6];
@@ -56,11 +56,20 @@ typedef struct {
 static const int8_t dR[6] = {  0,  0, +1, -1, -1, +1 };
 static const int8_t dQ[6] = { +1, -1,  0,  0, +1, -1 };
 
+static const int8_t dxEven[6] = {+1,  0, -1, -1,  0, +1};
+static const int8_t dyEven[6] = { 0, -1,  0, +1, +1, +1};
+
+static const int8_t dxOdd[6]  = {+1,  0, -1, -1,  0, +1};
+static const int8_t dyOdd[6]  = {-1, -1, -1,  0, +1,  0};
+
 //Coordinates conversion
+static inline int linearToX(uint32_t idx);
+static inline int linearToY(uint32_t idx);
 static inline uint32_t offsetToLinear(int32_t x, int32_t y);
 static inline uint32_t axialToLinear(int32_t r, int32_t q);
 static inline Axial offsetToAxial(uint32_t x, uint32_t y);
 static inline Offset axialToOffset(uint32_t r, int32_t q);
+static inline Offset linearToOffset(uint32_t index);
 
 static inline Adjacents findAdjacents(Axial source) {
     Adjacents adj;
@@ -376,6 +385,14 @@ static inline void printGrid()
 }
 
 /*Coordinates conversion*/
+static inline int linearToX(uint32_t idx) {
+    return idx % columnsSize;
+}
+
+static inline int linearToY(uint32_t idx) {
+    return idx / columnsSize;
+}
+
 static inline uint32_t offsetToLinear(int32_t x, int32_t y) {
     if((unsigned) x >= columnsSize || (unsigned) y >= rowsSize) {
         return UINT32_MAX;
@@ -417,6 +434,14 @@ static inline Offset axialToOffset(uint32_t r, int32_t q) {
     newCoord.y = r;
 
     return newCoord;
+}
+
+static inline Offset linearToOffset(uint32_t index) {
+    Offset coord;
+
+    coord.x = linearToX(index);
+    coord.y = linearToY(index);
+    return coord;
 }
 
 void init(uint32_t columns, uint32_t rows) {
@@ -466,6 +491,8 @@ void changeCost(int x, int y, int8_t param, uint16_t radius) {
     } else {
         printf("OK\n");
     }
+
+    currentVersion++;
 
     for (int i = 0; i < size; i++) {
         if (i == sourceIndex) {
@@ -589,6 +616,8 @@ static inline void removeAirRoute(uint32_t hex1Index, uint32_t hex2Index, uint8_
 }
 
 void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
+    currentVersion++;
+
     uint32_t hex1Index = offsetToLinear(x1, y1);
     uint32_t hex2Index = offsetToLinear(x2, y2);
 
@@ -608,15 +637,8 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
     IndexHeap heap = newIndexHeap();
     grid[hex1Index].distance = 0;
     grid[hex1Index].color = WHITE;
+    grid[hex1Index].version = currentVersion;
     insertIndexHeap(&heap, hex1Index);
-
-    for (int i = 0; i < size; i++) {
-        if (i != hex1Index) {
-            grid[i].distance = UINT32_MAX;
-            grid[i].predecessor = UINT32_MAX;
-            grid[i].color = WHITE;
-        }
-    }
 
     while (!isEmptyIndexHeap(&heap)) {
         uint32_t hexIndex = removeIndexHeap(&heap);
@@ -642,6 +664,12 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
             if (adjIndex == UINT32_MAX) {
                 continue;
             }
+            
+            if (grid[adjIndex].version != currentVersion) {
+                grid[adjIndex].distance = UINT32_MAX;
+                grid[adjIndex].color = WHITE;
+                grid[adjIndex].version = currentVersion;
+            }
 
             if (newDistance < grid[adjIndex].distance) {
                 grid[adjIndex].distance = newDistance;
@@ -657,6 +685,12 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
             uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].airRoutesCost[i];
 
             uint32_t adjIndex = grid[hexIndex].airRoutes[i];
+            if (grid[adjIndex].version != currentVersion) {
+                grid[adjIndex].distance = UINT32_MAX;
+                grid[adjIndex].color = WHITE;
+                grid[adjIndex].version = currentVersion;
+            }
+
             if (newDistance < grid[adjIndex].distance) {
                 grid[adjIndex].distance = newDistance;
                 grid[adjIndex].predecessor = hexIndex;
@@ -668,7 +702,7 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
         }
     }
     
-    if (grid[hex2Index].distance == UINT32_MAX) {
+    if (grid[hex2Index].distance == UINT32_MAX || grid[hex2Index].version != currentVersion) {
         printf("-1\n");
     } else {
         printf("%u\n", grid[hex2Index].distance);

@@ -131,6 +131,10 @@ static inline int isEmptyAxialQueue(AxialQueue* queue) {
     return queue->size == 0;
 }
 
+static inline void freeAxialQueue(AxialQueue* queue) {
+    free(queue->data);
+}
+
 HexQueue newHexQueue() {
     HexQueue queue;
 
@@ -304,6 +308,7 @@ int main() {
     while (fgets(buf, sizeof buf, stdin)) {
         dispatchInput(buf);
     }
+    free(grid);
     return 0;
 }
 
@@ -452,7 +457,7 @@ void initializeGridCosts() {
 }
 
 void changeCost(int x, int y, int8_t param, uint16_t radius) {
-    Axial coord = offsetToAxial((uint16_t) x, (uint16_t) y);
+    Axial coord = offsetToAxial((uint32_t) x, (uint32_t) y);
     int sourceIndex = axialToLinear(coord.r, coord.q);
 
     if (radius == 0 || param < -10 || param > 10 || sourceIndex == UINT32_MAX) {
@@ -502,6 +507,7 @@ void changeCost(int x, int y, int8_t param, uint16_t radius) {
         }
         currentHex->color = BLACK;
     }
+    freeAxialQueue(&queue);
 }
 void changeHexCost(Hex* hexagon, int8_t param, uint16_t radius) {
     int num = param * (radius - hexagon->distance);
@@ -590,6 +596,10 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
         printf("-1\n");
         return;
     }
+    if (grid[hex1Index].landCost == 0) {
+        printf("-1\n");
+        return;
+    }
     if (hex1Index == hex2Index) {
         printf("0\n");
         return;
@@ -619,38 +629,40 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
             continue;
         }
         grid[hexIndex].color = BLACK;
+
+        if (grid[hexIndex].landCost == 0) {
+            continue;
+        }
         
-        if (grid[hexIndex].landCost != 0) {
-            Adjacents adj = findAdjacents(linearToAxial(hexIndex));
-            for (int i = 0; i < adj.size; i++) {
-                uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].landCost;
-                
-                uint32_t adjIndex = axialToLinear(adj.adj[i].r, adj.adj[i].q);
-                if (adjIndex == UINT32_MAX) {
-                    continue;
-                }
-
-                if (newDistance < grid[adjIndex].distance) {
-                    grid[adjIndex].distance = newDistance;
-                    grid[adjIndex].predecessor = hexIndex;
-
-                    if (grid[adjIndex].color != BLACK) {
-                        insertIndexHeap(&heap, adjIndex);
-                    }
-                }
+        Adjacents adj = findAdjacents(linearToAxial(hexIndex));
+        for (int i = 0; i < adj.size; i++) {
+            uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].landCost;
+            
+            uint32_t adjIndex = axialToLinear(adj.adj[i].r, adj.adj[i].q);
+            if (adjIndex == UINT32_MAX) {
+                continue;
             }
 
-            for (int i = 0; i < grid[hexIndex].airRoutesNum; i++) {
-                uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].airRoutesCost[i];
+            if (newDistance < grid[adjIndex].distance) {
+                grid[adjIndex].distance = newDistance;
+                grid[adjIndex].predecessor = hexIndex;
 
-                uint32_t adjIndex = grid[hexIndex].airRoutes[i];
-                if (newDistance < grid[adjIndex].distance) {
-                    grid[adjIndex].distance = newDistance;
-                    grid[adjIndex].predecessor = hexIndex;
+                if (grid[adjIndex].color != BLACK) {
+                    insertIndexHeap(&heap, adjIndex);
+                }
+            }
+        }
 
-                    if (grid[adjIndex].color != BLACK) {
-                        insertIndexHeap(&heap, adjIndex);
-                    }
+        for (int i = 0; i < grid[hexIndex].airRoutesNum; i++) {
+            uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].airRoutesCost[i];
+
+            uint32_t adjIndex = grid[hexIndex].airRoutes[i];
+            if (newDistance < grid[adjIndex].distance) {
+                grid[adjIndex].distance = newDistance;
+                grid[adjIndex].predecessor = hexIndex;
+
+                if (grid[adjIndex].color != BLACK) {
+                    insertIndexHeap(&heap, adjIndex);
                 }
             }
         }

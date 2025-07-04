@@ -207,37 +207,31 @@ static inline int isEmptyHexQueue(HexQueue* queue) {
 }
 
 typedef struct {
-    uint32_t *index;
-    uint32_t *priority;
+    uint32_t *data;
     uint32_t size;
 } IndexHeap;
-
-IndexHeap heap = {NULL, NULL, 0};
 
 
 #define LEFT(i)   (2*i + 1)
 #define RIGHT(i)  (2*i +2)
 #define PARENT(i) ((i - 1) / 2)
 
-static inline void newIndexHeap() {
-    heap.index = realloc(heap.index, size * sizeof(uint32_t));
-    heap.priority = realloc(heap.priority, size * sizeof(uint32_t));
+static inline IndexHeap newIndexHeap() {
+    IndexHeap heap;
+
+    heap.data = malloc(size * sizeof(uint32_t));
     heap.size = 0;
+
+    return heap;
 }
 
-static inline void resetIndexHeap() {
-    heap.size = 0;
-}
-
-static inline void insertIndexHeap(IndexHeap *heap, uint32_t index, uint32_t priority) {
-    heap->index[heap->size] = index;
-    heap->priority[heap->size] = priority;
+static inline void insertIndexHeap(IndexHeap *heap, uint32_t key) {
+    heap->data[heap->size] = key;
     heap->size++;
 
     uint32_t i = heap->size - 1;
-    while (i > 0 && heap->priority[i] < heap->priority[PARENT(i)]) {
-        swap(&heap->index[PARENT(i)], &heap->index[i]);
-        swap(&heap->priority[PARENT(i)], &heap->priority[i]);
+    while (i > 0 && grid[heap->data[i]].distance < grid[heap->data[PARENT(i)]].distance) {
+        swap(&heap->data[PARENT(i)], &heap->data[i]);
         i = PARENT(i);
     }
 }
@@ -247,18 +241,17 @@ static inline void minIndexHeapify(IndexHeap *heap, uint32_t n) {
     uint32_t right = RIGHT(n);
 
     uint32_t minPos;
-    if (left < heap->size && heap->priority[left] < heap->priority[n]) {
+    if (left < heap->size && grid[heap->data[left]].distance < grid[heap->data[n]].distance) {
         minPos = left;
     } else {
         minPos = n;
     }
-    if (right < heap->size && heap->priority[right] < heap->priority[minPos]) {
+    if (right < heap->size && grid[heap->data[right]].distance < grid[heap->data[minPos]].distance) {
         minPos = right;
     }
 
     if (minPos != n) {
-        swap(&heap->index[n], &heap->index[minPos]);
-        swap(&heap->priority[n], &heap->priority[minPos]);
+        swap(&heap->data[n], &heap->data[minPos]);
         minIndexHeapify(heap, minPos);
     }
 }
@@ -268,22 +261,42 @@ static inline uint32_t removeIndexHeap(IndexHeap *heap) {
         return UINT32_MAX;
     }
 
-    uint32_t min = heap->index[0];
+    uint32_t min = heap->data[0];
     heap->size--;
-
-    heap->index[0] = heap->index[heap->size];
-    heap->priority[0] = heap->priority[heap->size];
+    heap->data[0] = heap->data[heap->size];
     minIndexHeapify(heap, 0);
-
     return min;
 }
 
 static inline uint32_t minIndexHeap(IndexHeap *heap) {
-    return heap->index[0];
+    return heap->data[0];
+}
+
+static inline void indexHeapDecreaseKey(IndexHeap *heap, uint32_t i, uint32_t cost) {
+    if (cost >= grid[heap->data[i]].distance) {
+        return;
+    }
+
+    grid[heap->data[i]].distance = cost;
+    while (i > 0 && grid[heap->data[i]].distance < grid[heap->data[PARENT(i)]].distance) {
+        swap(&heap->data[PARENT(i)], &heap->data[i]);
+        i = PARENT(i);
+    }
 }
 
 static inline int isEmptyIndexHeap(IndexHeap* heap) {
     return heap->size == 0;
+}
+
+static inline void freeIndexHeap(IndexHeap *heap)
+{
+    if (!heap) {
+        return;
+    }
+
+    free(heap->data);
+    heap->data = NULL;
+    heap->size = 0;
 }
 
 /*Wrapping and unwrapping a 16b into a 32b int*/
@@ -323,7 +336,6 @@ static inline int floorDiv(int a, int b);
 static inline void activateAirRoute(uint32_t hex1Index, uint32_t hex2Index, int32_t sum);
 static inline void removeAirRoute(uint32_t hex1Index, uint32_t hex2Index, uint8_t position);
 static inline void swap(uint32_t *x1, uint32_t *x2);
-static inline uint32_t axialDistance(uint32_t r1, int32_t q1, uint32_t r2, int32_t q2);
 
 //?TEST ONLY
 static inline void printGrid();
@@ -672,10 +684,7 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
         return;
     }
 
-    Axial sourceCoord = linearToAxial(hex1Index);
-    Axial destinationCoord = linearToAxial(hex2Index);
-    uint32_t minTravelCost = 1;
-
+    IndexHeap heap = newIndexHeap();
     grid[hex1Index].distance = 0;
     grid[hex1Index].color = WHITE;
     grid[hex1Index].version = currentVersion;
@@ -748,22 +757,5 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
     } else {
         printf("%u\n", grid[hex2Index].distance);
     }
-}
-
-static inline uint32_t axialDistance(uint32_t r1, int32_t q1, uint32_t r2, int32_t q2) {
-    int32_t dr = r1 - r2;
-    int32_t dq = q1 - q2;
-    int32_t ds = (r1 - q1) - (r2 - q2);
-
-    if (dr < 0) {
-        dr = -dr;
-    }
-    if (dq < 0) {
-        dq = -dq;
-    }
-    if (ds < 0) {
-        ds = -ds;
-    }
-
-    return (dr + dq + ds) / 2;
+    freeIndexHeap(&heap);
 }

@@ -27,19 +27,24 @@ static inline void swap(uint32_t *x1, uint32_t *x2) {
     *x2 = temp;
 }
 
+static inline void swap8bit(uint8_t *x1, uint8_t *x2) {
+    uint8_t temp = *x1;
+    *x1 = *x2;
+    *x2 = temp;
+}
+
 /*Grid and hexagons*/
 
 typedef struct {
     /* ------------- hexagon data ------------- */
-    uint32_t landCost;
+    uint8_t landCost;
     uint8_t airRoutesNum;
     uint32_t airRoutes[5];
-    uint32_t airRoutesCost[5];
+    uint8_t airRoutesCost[5];
     uint8_t color;
 
     /* ------------- for fast queries ------------- */
     uint32_t distance;
-    uint32_t predecessor;
     uint32_t version;
 
     /* ------------- for bucket ------------- */
@@ -303,12 +308,12 @@ static inline void freeIndexHeap(IndexHeap *heap)
     heap->size = 0;
 }
 
-#define BUCKET_SIZE 101    /* #bucket (circolare 0…W_MAX)         */
+#define BUCKET_SIZE 101
 typedef struct {
-    uint32_t head[BUCKET_SIZE];   /* testa di ogni bucket 0..100          */
-    uint32_t current;           /* bucket con distanza “minima”         */
-    uint32_t distance;           /* distanza assoluta di curr            */
-    uint32_t count;            /* nodi totali nella queue              */
+    uint32_t head[BUCKET_SIZE];
+    uint32_t current;
+    uint32_t distance;
+    uint32_t count;
 } Bucket;
 
 Bucket bucket;
@@ -408,6 +413,7 @@ static inline int floorDiv(int a, int b);
 static inline void activateAirRoute(uint32_t hex1Index, uint32_t hex2Index, int32_t sum);
 static inline void removeAirRoute(uint32_t hex1Index, uint32_t hex2Index, uint8_t position);
 static inline void swap(uint32_t *x1, uint32_t *x2);
+static inline void swap8bit(uint8_t *x1, uint8_t *x2);
 
 //?TEST ONLY
 static inline void printGrid();
@@ -731,7 +737,7 @@ static inline void activateAirRoute(uint32_t hex1Index, uint32_t hex2Index, int3
 static inline void removeAirRoute(uint32_t hex1Index, uint32_t hex2Index, uint8_t position) {
     for (int i = position; i < grid[hex1Index].airRoutesNum - 1; i++) {
         swap(&grid[hex1Index].airRoutes[i], &grid[hex1Index].airRoutes[i + 1]);
-        swap(&grid[hex1Index].airRoutesCost[i], &grid[hex1Index].airRoutesCost[i + 1]);
+        swap8bit(&grid[hex1Index].airRoutesCost[i], &grid[hex1Index].airRoutesCost[i + 1]);
     }
 
     grid[hex1Index].airRoutesNum--;

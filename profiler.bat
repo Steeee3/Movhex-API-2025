@@ -1,2 +1,2 @@
 @echo off
-test.exe < ./test_pubblici/large.txt > output.txt
+test < ".\test_pubblici\long.txt" > output.txt

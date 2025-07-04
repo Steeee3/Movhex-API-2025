@@ -47,20 +47,57 @@ Hex* grid = NULL;
 uint32_t columnsSize = 0;
 uint32_t rowsSize = 0;
 uint32_t size = 0;
-#define HEX(c, r)  grid[(size_t)(r) * columns + (c)]
+uint32_t currentVersion = 0;
 
 typedef struct {
     Axial adj[6];
     uint8_t size;
 } Adjacents;
+
+typedef struct {
+    uint32_t adj[6];
+    uint8_t size;
+} AdjacentsLinear;
 static const int8_t dR[6] = {  0,  0, +1, -1, -1, +1 };
 static const int8_t dQ[6] = { +1, -1,  0,  0, +1, -1 };
 
+static const int8_t dxEven[6] = { +1,  0, -1, -1, -1,  0 };
+static const int8_t dyEven[6] = {  0, -1, -1,  0, +1, +1 };
+
+static const int8_t dxOdd[6]  = { +1, +1,  0, -1,  0, +1 };
+static const int8_t dyOdd[6]  = {  0, -1, -1,  0, +1, +1 };
+
+uint32_t (*adjacencyMap)[6];
+
 //Coordinates conversion
+static inline int linearToX(uint32_t idx);
+static inline int linearToY(uint32_t idx);
 static inline uint32_t offsetToLinear(int32_t x, int32_t y);
 static inline uint32_t axialToLinear(int32_t r, int32_t q);
 static inline Axial offsetToAxial(uint32_t x, uint32_t y);
 static inline Offset axialToOffset(uint32_t r, int32_t q);
+static inline Offset linearToOffset(uint32_t index);
+
+static inline AdjacentsLinear findAdjacentsOffset(int32_t x, int32_t y) {
+    AdjacentsLinear adjacents;
+    adjacents.size = 0;
+
+    const int8_t *dx = (y & 1) ? dxOdd  : dxEven;
+    const int8_t *dy = (y & 1) ? dyOdd  : dyEven;
+
+    for (int i = 0; i < 6; i++) {
+        int32_t adjX = x + dx[i];
+        int32_t adjY = y + dy[i];
+
+        if (adjX < 0 || adjY < 0 || adjX >= columnsSize || adjY >= rowsSize) {
+            continue;
+        }
+
+        adjacents.adj[adjacents.size] = (uint32_t) (adjY * columnsSize + adjX);
+        adjacents.size++;
+    }
+    return adjacents;
+}
 
 static inline Adjacents findAdjacents(Axial source) {
     Adjacents adj;
@@ -129,6 +166,10 @@ static inline Axial dequeueAxial(AxialQueue* queue) {
 
 static inline int isEmptyAxialQueue(AxialQueue* queue) {
     return queue->size == 0;
+}
+
+static inline void freeAxialQueue(AxialQueue* queue) {
+    free(queue->data);
 }
 
 HexQueue newHexQueue() {
@@ -272,6 +313,7 @@ static void dispatchInput(const char *line);
 uint_fast8_t isOutOfBounds(uint32_t columns, uint32_t rows);
 Hex *newGrid(uint32_t columns, uint32_t rows);
 void initializeGridCosts();
+static inline void fillAdjacencyMap();
 
 //changeCost support functions
 void changeHexCost(Hex* hexagon, int8_t param, uint16_t radius);
@@ -292,6 +334,7 @@ int main() {
     while (fgets(buf, sizeof buf, stdin)) {
         dispatchInput(buf);
     }
+    free(grid);
     return 0;
 }
 
@@ -359,6 +402,14 @@ static inline void printGrid()
 }
 
 /*Coordinates conversion*/
+static inline int linearToX(uint32_t idx) {
+    return idx % columnsSize;
+}
+
+static inline int linearToY(uint32_t idx) {
+    return idx / columnsSize;
+}
+
 static inline uint32_t offsetToLinear(int32_t x, int32_t y) {
     if((unsigned) x >= columnsSize || (unsigned) y >= rowsSize) {
         return UINT32_MAX;
@@ -402,6 +453,14 @@ static inline Offset axialToOffset(uint32_t r, int32_t q) {
     return newCoord;
 }
 
+static inline Offset linearToOffset(uint32_t index) {
+    Offset coord;
+
+    coord.x = linearToX(index);
+    coord.y = linearToY(index);
+    return coord;
+}
+
 void init(uint32_t columns, uint32_t rows) {
     if (isOutOfBounds(columns, rows)) {
         fprintf(stderr, "KO\n");
@@ -412,7 +471,9 @@ void init(uint32_t columns, uint32_t rows) {
     grid = newGrid(columns, rows);
 
     initializeGridCosts();
-    newIndexHeap();
+
+    adjacencyMap = malloc(size * sizeof(*adjacencyMap));
+    fillAdjacencyMap();
 
     printf("OK\n");
 }
@@ -440,8 +501,26 @@ void initializeGridCosts() {
     }
 }
 
+static inline void fillAdjacencyMap() {
+    for (int32_t y = 0; y < (int32_t) rowsSize; y++) {
+        const int8_t *dx = (y & 1) ? dxOdd : dxEven;
+        const int8_t *dy = (y & 1) ? dyOdd : dyEven;
+
+        for (int32_t x = 0; x < (int32_t) columnsSize; x++) {
+            uint32_t index = (uint32_t) (y * columnsSize + x);
+
+            for (int i = 0; i < 6; i++) {
+                int32_t adjX = x + dx[i];
+                int32_t adjY = y + dy[i];
+
+                adjacencyMap[index][i] = offsetToLinear(adjX, adjY);
+            }
+        }
+    }
+}
+
 void changeCost(int x, int y, int8_t param, uint16_t radius) {
-    Axial coord = offsetToAxial((uint16_t) x, (uint16_t) y);
+    Axial coord = offsetToAxial((uint32_t) x, (uint32_t) y);
     int sourceIndex = axialToLinear(coord.r, coord.q);
 
     if (radius == 0 || param < -10 || param > 10 || sourceIndex == UINT32_MAX) {
@@ -450,6 +529,8 @@ void changeCost(int x, int y, int8_t param, uint16_t radius) {
     } else {
         printf("OK\n");
     }
+
+    currentVersion++;
 
     for (int i = 0; i < size; i++) {
         if (i == sourceIndex) {
@@ -491,6 +572,7 @@ void changeCost(int x, int y, int8_t param, uint16_t radius) {
         }
         currentHex->color = BLACK;
     }
+    freeAxialQueue(&queue);
 }
 void changeHexCost(Hex* hexagon, int8_t param, uint16_t radius) {
     int num = param * (radius - hexagon->distance);
@@ -517,8 +599,8 @@ void changeHexCost(Hex* hexagon, int8_t param, uint16_t radius) {
             hexagon->airRoutesCost[i] = newCost;
         }
 
-        if (newCost < 0) {
-            hexagon->airRoutesCost[i] = 0;
+        if (newCost <= 0) {
+            hexagon->airRoutesCost[i] = 1;
         } else if (newCost > 100) {
             hexagon->airRoutesCost[i] = 100;
         } else {
@@ -572,12 +654,16 @@ static inline void removeAirRoute(uint32_t hex1Index, uint32_t hex2Index, uint8_
 }
 
 void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
-    resetIndexHeap();
+    currentVersion++;
 
     uint32_t hex1Index = offsetToLinear(x1, y1);
     uint32_t hex2Index = offsetToLinear(x2, y2);
 
     if (hex1Index == UINT32_MAX || hex2Index == UINT32_MAX) {
+        printf("-1\n");
+        return;
+    }
+    if (grid[hex1Index].landCost == 0) {
         printf("-1\n");
         return;
     }
@@ -592,15 +678,8 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
 
     grid[hex1Index].distance = 0;
     grid[hex1Index].color = WHITE;
-    insertIndexHeap(&heap, hex1Index, 0);
-
-    for (int i = 0; i < size; i++) {
-        if (i != hex1Index) {
-            grid[i].distance = UINT32_MAX;
-            grid[i].predecessor = UINT32_MAX;
-            grid[i].color = WHITE;
-        }
-    }
+    grid[hex1Index].version = currentVersion;
+    insertIndexHeap(&heap, hex1Index);
 
     while (!isEmptyIndexHeap(&heap)) {
         uint32_t hexIndex = removeIndexHeap(&heap);
@@ -613,49 +692,58 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
             continue;
         }
         grid[hexIndex].color = BLACK;
+
+        if (grid[hexIndex].landCost == 0) {
+            continue;
+        }
         
-        if (grid[hexIndex].landCost != 0) {
-            Adjacents adj = findAdjacents(linearToAxial(hexIndex));
-
-            for (int i = 0; i < adj.size; i++) {
-                uint32_t adjIndex = axialToLinear(adj.adj[i].r, adj.adj[i].q);
-                if (adjIndex == UINT32_MAX) {
-                    continue;
-                }
-
-                uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].landCost;
-                uint32_t priority = axialDistance(destinationCoord.r, destinationCoord.q , adj.adj[i].r, adj.adj[i].q) * minTravelCost;
-
-                if (newDistance < grid[adjIndex].distance) {
-                    grid[adjIndex].distance = newDistance;
-                    grid[adjIndex].predecessor = hexIndex;
-
-                    if (grid[adjIndex].color != BLACK) {
-                        insertIndexHeap(&heap, adjIndex, newDistance + priority);
-                    }
-                }
+        const uint32_t *adjacents = adjacencyMap[hexIndex];
+        uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].landCost;
+        for (int i = 0; i < 6; i++) {
+            if (adjacents[i] == UINT32_MAX) {
+                continue;
             }
 
-            for (int i = 0; i < grid[hexIndex].airRoutesNum; i++) {
-                uint32_t adjIndex = grid[hexIndex].airRoutes[i];
-                Axial airCoord = linearToAxial(adjIndex);
+            uint32_t adjIndex = adjacents[i];
+            
+            if (grid[adjIndex].version != currentVersion) {
+                grid[adjIndex].distance = UINT32_MAX;
+                grid[adjIndex].color = WHITE;
+                grid[adjIndex].version = currentVersion;
+            }
 
-                uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].airRoutesCost[i];
-                uint32_t priority = axialDistance(destinationCoord.r, destinationCoord.q , airCoord.r, airCoord.q) * minTravelCost;
+            if (newDistance < grid[adjIndex].distance) {
+                grid[adjIndex].distance = newDistance;
+                grid[adjIndex].predecessor = hexIndex;
 
-                if (newDistance < grid[adjIndex].distance) {
-                    grid[adjIndex].distance = newDistance;
-                    grid[adjIndex].predecessor = hexIndex;
+                if (grid[adjIndex].color != BLACK) {
+                    insertIndexHeap(&heap, adjIndex);
+                }
+            }
+        }
 
-                    if (grid[adjIndex].color != BLACK) {
-                        insertIndexHeap(&heap, adjIndex, newDistance + priority);
-                    }
+        for (int i = 0; i < grid[hexIndex].airRoutesNum; i++) {
+            newDistance = grid[hexIndex].distance + grid[hexIndex].airRoutesCost[i];
+
+            uint32_t adjIndex = grid[hexIndex].airRoutes[i];
+            if (grid[adjIndex].version != currentVersion) {
+                grid[adjIndex].distance = UINT32_MAX;
+                grid[adjIndex].color = WHITE;
+                grid[adjIndex].version = currentVersion;
+            }
+
+            if (newDistance < grid[adjIndex].distance) {
+                grid[adjIndex].distance = newDistance;
+                grid[adjIndex].predecessor = hexIndex;
+
+                if (grid[adjIndex].color != BLACK) {
+                    insertIndexHeap(&heap, adjIndex);
                 }
             }
         }
     }
     
-    if (grid[hex2Index].distance == UINT32_MAX) {
+    if (grid[hex2Index].distance == UINT32_MAX || grid[hex2Index].version != currentVersion) {
         printf("-1\n");
     } else {
         printf("%u\n", grid[hex2Index].distance);

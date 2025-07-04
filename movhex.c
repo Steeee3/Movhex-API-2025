@@ -41,6 +41,10 @@ typedef struct {
     uint32_t distance;
     uint32_t predecessor;
     uint32_t version;
+
+    /* ------------- for bucket ------------- */
+    uint32_t bucketNext;
+    uint8_t bucketIndex;
 } Hex;
 
 Hex* grid = NULL;
@@ -297,6 +301,74 @@ static inline void freeIndexHeap(IndexHeap *heap)
     free(heap->data);
     heap->data = NULL;
     heap->size = 0;
+}
+
+#define BUCKET_SIZE 101    /* #bucket (circolare 0…W_MAX)         */
+typedef struct {
+    uint32_t head[BUCKET_SIZE];   /* testa di ogni bucket 0..100          */
+    uint32_t current;           /* bucket con distanza “minima”         */
+    uint32_t distance;           /* distanza assoluta di curr            */
+    uint32_t count;            /* nodi totali nella queue              */
+} Bucket;
+
+Bucket bucket;
+
+static inline void initializeBucket() {
+    for (uint32_t i = 0; i < BUCKET_SIZE; i++) {
+        bucket.head[i] = UINT32_MAX;
+    }
+
+    for (uint32_t i = 0; i < size; i++) {
+        grid[i].bucketIndex = UINT8_MAX;
+        grid[i].bucketNext = UINT32_MAX;
+    }
+
+    bucket.count = 0;
+    bucket.current = 0;
+    bucket.distance = 0;
+}
+
+static inline void pushBucket(uint32_t value) {
+    uint8_t oldBucket = grid[value].bucketIndex;
+
+    if (oldBucket != UINT8_MAX) {
+        uint32_t *temp = &bucket.head[oldBucket];
+
+        while (*temp != UINT32_MAX && *temp != value) {
+            temp = &grid[*temp].bucketNext;
+        }
+
+        if (*temp == value) {
+            *temp = grid[value].bucketNext;
+            bucket.count--;
+        }
+    }
+
+    uint32_t newBucket = grid[value].distance % BUCKET_SIZE;
+    grid[value].bucketNext = bucket.head[newBucket];
+    bucket.head[newBucket] = value;
+    grid[value].bucketIndex = newBucket;
+
+    bucket.count++;
+}
+
+static inline uint32_t popBucket() {
+    while (bucket.head[bucket.current] == UINT32_MAX) {
+        bucket.current = (bucket.current + 1) % BUCKET_SIZE;
+        bucket.distance++;
+    }
+
+    uint32_t poppedValue = bucket.head[bucket.current];
+    bucket.head[bucket.current] = grid[poppedValue].bucketNext;
+    grid[poppedValue].bucketNext = UINT32_MAX;
+    grid[poppedValue].bucketIndex = UINT8_MAX;
+    bucket.count--;
+
+    return poppedValue;
+}
+
+static inline uint8_t isEmptyBucket() {
+    return bucket.count == 0;
 }
 
 /*Wrapping and unwrapping a 16b into a 32b int*/
@@ -684,23 +756,17 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
         return;
     }
 
-    IndexHeap heap = newIndexHeap();
+    initializeBucket();
     grid[hex1Index].distance = 0;
-    grid[hex1Index].color = WHITE;
     grid[hex1Index].version = currentVersion;
-    insertIndexHeap(&heap, hex1Index);
+    pushBucket(hex1Index);
 
-    while (!isEmptyIndexHeap(&heap)) {
-        uint32_t hexIndex = removeIndexHeap(&heap);
+    while (!isEmptyBucket()) {
+        uint32_t hexIndex = popBucket();
 
         if (hexIndex == hex2Index) {
             break;
         }
-
-        if (grid[hexIndex].color == BLACK) {
-            continue;
-        }
-        grid[hexIndex].color = BLACK;
 
         if (grid[hexIndex].landCost == 0) {
             continue;
@@ -717,17 +783,13 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
             
             if (grid[adjIndex].version != currentVersion) {
                 grid[adjIndex].distance = UINT32_MAX;
-                grid[adjIndex].color = WHITE;
                 grid[adjIndex].version = currentVersion;
             }
 
             if (newDistance < grid[adjIndex].distance) {
                 grid[adjIndex].distance = newDistance;
-                grid[adjIndex].predecessor = hexIndex;
 
-                if (grid[adjIndex].color != BLACK) {
-                    insertIndexHeap(&heap, adjIndex);
-                }
+                pushBucket(adjIndex);
             }
         }
 
@@ -737,17 +799,13 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
             uint32_t adjIndex = grid[hexIndex].airRoutes[i];
             if (grid[adjIndex].version != currentVersion) {
                 grid[adjIndex].distance = UINT32_MAX;
-                grid[adjIndex].color = WHITE;
                 grid[adjIndex].version = currentVersion;
             }
 
             if (newDistance < grid[adjIndex].distance) {
                 grid[adjIndex].distance = newDistance;
-                grid[adjIndex].predecessor = hexIndex;
 
-                if (grid[adjIndex].color != BLACK) {
-                    insertIndexHeap(&heap, adjIndex);
-                }
+                pushBucket(adjIndex);
             }
         }
     }
@@ -757,5 +815,4 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
     } else {
         printf("%u\n", grid[hex2Index].distance);
     }
-    freeIndexHeap(&heap);
 }

@@ -53,14 +53,21 @@ typedef struct {
     Axial adj[6];
     uint8_t size;
 } Adjacents;
+
+typedef struct {
+    uint32_t adj[6];
+    uint8_t size;
+} AdjacentsLinear;
 static const int8_t dR[6] = {  0,  0, +1, -1, -1, +1 };
 static const int8_t dQ[6] = { +1, -1,  0,  0, +1, -1 };
 
-static const int8_t dxEven[6] = {+1,  0, -1, -1,  0, +1};
-static const int8_t dyEven[6] = { 0, -1,  0, +1, +1, +1};
+static const int8_t dxEven[6] = { +1,  0, -1, -1, -1,  0 };
+static const int8_t dyEven[6] = {  0, -1, -1,  0, +1, +1 };
 
-static const int8_t dxOdd[6]  = {+1,  0, -1, -1,  0, +1};
-static const int8_t dyOdd[6]  = {-1, -1, -1,  0, +1,  0};
+static const int8_t dxOdd[6]  = { +1, +1,  0, -1,  0, +1 };
+static const int8_t dyOdd[6]  = {  0, -1, -1,  0, +1, +1 };
+
+uint32_t (*adjacencyMap)[6];
 
 //Coordinates conversion
 static inline int linearToX(uint32_t idx);
@@ -70,6 +77,27 @@ static inline uint32_t axialToLinear(int32_t r, int32_t q);
 static inline Axial offsetToAxial(uint32_t x, uint32_t y);
 static inline Offset axialToOffset(uint32_t r, int32_t q);
 static inline Offset linearToOffset(uint32_t index);
+
+static inline AdjacentsLinear findAdjacentsOffset(int32_t x, int32_t y) {
+    AdjacentsLinear adjacents;
+    adjacents.size = 0;
+
+    const int8_t *dx = (y & 1) ? dxOdd  : dxEven;
+    const int8_t *dy = (y & 1) ? dyOdd  : dyEven;
+
+    for (int i = 0; i < 6; i++) {
+        int32_t adjX = x + dx[i];
+        int32_t adjY = y + dy[i];
+
+        if (adjX < 0 || adjY < 0 || adjX >= columnsSize || adjY >= rowsSize) {
+            continue;
+        }
+
+        adjacents.adj[adjacents.size] = (uint32_t) (adjY * columnsSize + adjX);
+        adjacents.size++;
+    }
+    return adjacents;
+}
 
 static inline Adjacents findAdjacents(Axial source) {
     Adjacents adj;
@@ -298,6 +326,7 @@ static void dispatchInput(const char *line);
 uint_fast8_t isOutOfBounds(uint32_t columns, uint32_t rows);
 Hex *newGrid(uint32_t columns, uint32_t rows);
 void initializeGridCosts();
+static inline void fillAdjacencyMap();
 
 //changeCost support functions
 void changeHexCost(Hex* hexagon, int8_t param, uint16_t radius);
@@ -455,6 +484,9 @@ void init(uint32_t columns, uint32_t rows) {
 
     initializeGridCosts();
 
+    adjacencyMap = malloc(size * sizeof(*adjacencyMap));
+    fillAdjacencyMap();
+
     printf("OK\n");
 }
 uint_fast8_t isOutOfBounds(uint32_t columns, uint32_t rows) {
@@ -478,6 +510,24 @@ void initializeGridCosts() {
     for (int i = 0; i < size; i++) {
         grid[i].landCost = 1;
         grid[i].airRoutesNum = 0;
+    }
+}
+
+static inline void fillAdjacencyMap() {
+    for (int32_t y = 0; y < (int32_t) rowsSize; y++) {
+        const int8_t *dx = (y & 1) ? dxOdd : dxEven;
+        const int8_t *dy = (y & 1) ? dyOdd : dyEven;
+
+        for (int32_t x = 0; x < (int32_t) columnsSize; x++) {
+            uint32_t index = (uint32_t) (y * columnsSize + x);
+
+            for (int i = 0; i < 6; i++) {
+                int32_t adjX = x + dx[i];
+                int32_t adjY = y + dy[i];
+
+                adjacencyMap[index][i] = offsetToLinear(adjX, adjY);
+            }
+        }
     }
 }
 
@@ -656,14 +706,14 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
             continue;
         }
         
-        Adjacents adj = findAdjacents(linearToAxial(hexIndex));
-        for (int i = 0; i < adj.size; i++) {
-            uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].landCost;
-            
-            uint32_t adjIndex = axialToLinear(adj.adj[i].r, adj.adj[i].q);
-            if (adjIndex == UINT32_MAX) {
+        const uint32_t *adjacents = adjacencyMap[hexIndex];
+        uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].landCost;
+        for (int i = 0; i < 6; i++) {
+            if (adjacents[i] == UINT32_MAX) {
                 continue;
             }
+
+            uint32_t adjIndex = adjacents[i];
             
             if (grid[adjIndex].version != currentVersion) {
                 grid[adjIndex].distance = UINT32_MAX;
@@ -682,7 +732,7 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
         }
 
         for (int i = 0; i < grid[hexIndex].airRoutesNum; i++) {
-            uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].airRoutesCost[i];
+            newDistance = grid[hexIndex].distance + grid[hexIndex].airRoutesCost[i];
 
             uint32_t adjIndex = grid[hexIndex].airRoutes[i];
             if (grid[adjIndex].version != currentVersion) {

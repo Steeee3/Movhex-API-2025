@@ -76,7 +76,15 @@ static const int8_t dyEven[6] = {  0, -1, -1,  0, +1, +1 };
 static const int8_t dxOdd[6]  = { +1, +1,  0, -1,  0, +1 };
 static const int8_t dyOdd[6]  = {  0, -1, -1,  0, +1, +1 };
 
-uint32_t (*adjacencyMap)[6];
+static int32_t dEven[6];
+static int32_t dOdd[6];
+
+static inline void initializeDeltaForAdjacents() {
+    for (uint8_t i = 0; i < 6; i++) {
+        dEven[i] = dyEven[i] * columnsSize + dxEven[i];
+        dOdd[i] = dyOdd[i] * columnsSize + dxOdd[i];
+    }
+}
 
 //Coordinates conversion
 static inline int linearToX(uint32_t idx);
@@ -403,7 +411,6 @@ static void dispatchInput(const char *line);
 uint_fast8_t isOutOfBounds(uint32_t columns, uint32_t rows);
 Hex *newGrid(uint32_t columns, uint32_t rows);
 void initializeGridCosts();
-static inline void fillAdjacencyMap();
 
 //changeCost support functions
 void changeHexCost(Hex* hexagon, int8_t param, uint16_t radius);
@@ -562,8 +569,7 @@ void init(uint32_t columns, uint32_t rows) {
 
     initializeGridCosts();
 
-    adjacencyMap = malloc(size * sizeof(*adjacencyMap));
-    fillAdjacencyMap();
+    initializeDeltaForAdjacents();
 
     printf("OK\n");
 }
@@ -588,24 +594,6 @@ void initializeGridCosts() {
     for (int i = 0; i < size; i++) {
         grid[i].landCost = 1;
         grid[i].airRoutesNum = 0;
-    }
-}
-
-static inline void fillAdjacencyMap() {
-    for (int32_t y = 0; y < (int32_t) rowsSize; y++) {
-        const int8_t *dx = (y & 1) ? dxOdd : dxEven;
-        const int8_t *dy = (y & 1) ? dyOdd : dyEven;
-
-        for (int32_t x = 0; x < (int32_t) columnsSize; x++) {
-            uint32_t index = (uint32_t) (y * columnsSize + x);
-
-            for (int i = 0; i < 6; i++) {
-                int32_t adjX = x + dx[i];
-                int32_t adjY = y + dy[i];
-
-                adjacencyMap[index][i] = offsetToLinear(adjX, adjY);
-            }
-        }
     }
 }
 
@@ -777,16 +765,23 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
         if (grid[hexIndex].landCost == 0) {
             continue;
         }
-        
-        const uint32_t *adjacents = adjacencyMap[hexIndex];
+
         uint32_t newDistance = grid[hexIndex].distance + grid[hexIndex].landCost;
-        for (int i = 0; i < 6; i++) {
-            if (adjacents[i] == UINT32_MAX) {
+
+        Offset hexCoord = linearToOffset(hexIndex);
+        const int32_t *delta = (hexCoord.y & 1) ? dOdd : dEven;
+        const int8_t *dx = (hexCoord.y & 1) ? dxOdd : dxEven;
+        for (uint8_t i = 0; i < 6; i++) {
+            int32_t adjIndex = hexIndex + delta[i];
+
+            if ((uint32_t) adjIndex >= size) {
                 continue;
             }
 
-            uint32_t adjIndex = adjacents[i];
-            
+            if ((dx[i] == -1 && hexCoord.x == 0) || (dx[i] == 1 && hexCoord.x == columnsSize - 1)) {
+                continue;
+            }
+
             if (grid[adjIndex].version != currentVersion) {
                 grid[adjIndex].distance = UINT32_MAX;
                 grid[adjIndex].version = currentVersion;

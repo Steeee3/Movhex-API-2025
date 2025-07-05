@@ -31,7 +31,6 @@ typedef struct {
     uint32_t airRoutes[5];
     /*for fast queries*/
     uint32_t distance;
-    uint32_t version;
     /*for bucket*/
     uint32_t bucketNext;
 
@@ -39,6 +38,8 @@ typedef struct {
     uint8_t landCost;
     uint8_t airRoutesNum;
     uint8_t color;
+    /*for fast queries*/
+    uint8_t version;
     /*for bucket*/
     uint8_t bucketIndex;
     uint8_t bucketVersion;
@@ -48,7 +49,7 @@ Hex* grid = NULL;
 uint32_t columnsSize = 0;
 uint32_t rowsSize = 0;
 uint32_t size = 0;
-uint32_t currentVersion = 0;
+uint8_t currentVersion = 0;
 
 /*Packing and depacking*/
 static inline void setAirRoute(Hex* hexagon, uint8_t routeIndex, uint32_t destination, uint8_t cost) {
@@ -562,6 +563,12 @@ static inline void removeAirRoute(uint32_t hex1Index, uint32_t hex2Index, uint8_
 
 void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
     currentVersion++;
+    if (currentVersion == 0) {
+        for (uint32_t i = 0; i < size; i++) {
+            grid[i].version = 0;
+        }
+        currentVersion = 1;
+    }
 
     uint32_t hex1Index = offsetToLinear(x1, y1);
     uint32_t hex2Index = offsetToLinear(x2, y2);

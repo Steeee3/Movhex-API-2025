@@ -27,14 +27,7 @@ static inline void swap(uint32_t *x1, uint32_t *x2) {
     *x2 = temp;
 }
 
-static inline void swap8bit(uint8_t *x1, uint8_t *x2) {
-    uint8_t temp = *x1;
-    *x1 = *x2;
-    *x2 = temp;
-}
-
 /*Grid and hexagons*/
-
 typedef struct {
     /*hexagon data*/
     uint32_t airRoutes[5];
@@ -50,6 +43,7 @@ typedef struct {
     uint8_t color;
     /*for bucket*/
     uint8_t bucketIndex;
+    uint8_t bucketVersion;
 } Hex;
 
 Hex* grid = NULL;
@@ -58,15 +52,28 @@ uint32_t rowsSize = 0;
 uint32_t size = 0;
 uint32_t currentVersion = 0;
 
+/*Packing and depacking*/
+static inline void setAirRoute(Hex* hexagon, uint8_t routeIndex, uint32_t destination, uint8_t cost) {
+    hexagon->airRoutes[routeIndex] = (destination << 8) | cost;
+}
+
+static inline void setAirRouteCost(Hex* hexagon, uint8_t routeIndex, uint8_t cost) {
+    hexagon->airRoutes[routeIndex] = (hexagon->airRoutes[routeIndex] & 0xFFFFFF00u) | cost;
+}
+
+static inline uint32_t getAirRouteDestination(Hex* hexagon, uint8_t routeIndex) {
+    return (hexagon->airRoutes[routeIndex] >> 8);
+}
+
+static inline uint32_t getAirRouteCost(Hex* hexagon, uint8_t routeIndex) {
+    return (uint8_t) hexagon->airRoutes[routeIndex];
+}
+
 typedef struct {
     Axial adj[6];
     uint8_t size;
 } Adjacents;
 
-typedef struct {
-    uint32_t adj[6];
-    uint8_t size;
-} AdjacentsLinear;
 static const int8_t dR[6] = {  0,  0, +1, -1, -1, +1 };
 static const int8_t dQ[6] = { +1, -1,  0,  0, +1, -1 };
 
@@ -94,43 +101,6 @@ static inline uint32_t axialToLinear(int32_t r, int32_t q);
 static inline Axial offsetToAxial(uint32_t x, uint32_t y);
 static inline Offset axialToOffset(uint32_t r, int32_t q);
 static inline Offset linearToOffset(uint32_t index);
-
-static inline void setAirRoute(Hex* hexagon, uint8_t routeIndex, uint32_t destination, uint8_t cost) {
-    hexagon->airRoutes[routeIndex] = (destination << 8) | cost;
-}
-
-static inline void setAirRouteCost(Hex* hexagon, uint8_t routeIndex, uint8_t cost) {
-    hexagon->airRoutes[routeIndex] = (hexagon->airRoutes[routeIndex] & 0xFFFFFF00u) | cost;
-}
-
-static inline uint32_t getAirRouteDestination(Hex* hexagon, uint8_t routeIndex) {
-    return (hexagon->airRoutes[routeIndex] >> 8);
-}
-
-static inline uint32_t getAirRouteCost(Hex* hexagon, uint8_t routeIndex) {
-    return (uint8_t) hexagon->airRoutes[routeIndex];
-}
-
-static inline AdjacentsLinear findAdjacentsOffset(int32_t x, int32_t y) {
-    AdjacentsLinear adjacents;
-    adjacents.size = 0;
-
-    const int8_t *dx = (y & 1) ? dxOdd  : dxEven;
-    const int8_t *dy = (y & 1) ? dyOdd  : dyEven;
-
-    for (int i = 0; i < 6; i++) {
-        int32_t adjX = x + dx[i];
-        int32_t adjY = y + dy[i];
-
-        if (adjX < 0 || adjY < 0 || adjX >= columnsSize || adjY >= rowsSize) {
-            continue;
-        }
-
-        adjacents.adj[adjacents.size] = (uint32_t) (adjY * columnsSize + adjX);
-        adjacents.size++;
-    }
-    return adjacents;
-}
 
 static inline Adjacents findAdjacents(Axial source) {
     Adjacents adj;
@@ -160,12 +130,6 @@ typedef struct {
     uint16_t tail;
     uint16_t size;
 } AxialQueue;
-typedef struct {
-    Hex* data;
-    uint16_t head;
-    uint16_t tail;
-    uint16_t size;
-} HexQueue;
 
 AxialQueue newAxialQueue() {
     AxialQueue queue;
@@ -205,133 +169,6 @@ static inline void freeAxialQueue(AxialQueue* queue) {
     free(queue->data);
 }
 
-HexQueue newHexQueue() {
-    HexQueue queue;
-
-    queue.data = malloc(size * sizeof(Hex));
-    queue.size = 0;
-    queue.head = 0;
-    queue.tail = 0;
-
-    return queue;
-}
-
-static inline int enqueueHex(HexQueue* queue, Hex element) {
-    if (queue->size == size) {
-        return -1;
-    }
-
-    queue->data[queue->tail] = element;
-    queue->tail = (queue->tail + 1) % size;
-    queue->size++;
-    return 0;
-}
-
-static inline Hex dequeueHex(HexQueue* queue) {
-    Hex element = queue->data[queue->head];
-    queue->head = (queue->head + 1) % size;
-    queue->size--;
-
-    return element;
-}
-
-static inline int isEmptyHexQueue(HexQueue* queue) {
-    return queue->size == 0;
-}
-
-typedef struct {
-    uint32_t *data;
-    uint32_t size;
-} IndexHeap;
-
-
-#define LEFT(i)   (2*i + 1)
-#define RIGHT(i)  (2*i +2)
-#define PARENT(i) ((i - 1) / 2)
-
-static inline IndexHeap newIndexHeap() {
-    IndexHeap heap;
-
-    heap.data = malloc(size * sizeof(uint32_t));
-    heap.size = 0;
-
-    return heap;
-}
-
-static inline void insertIndexHeap(IndexHeap *heap, uint32_t key) {
-    heap->data[heap->size] = key;
-    heap->size++;
-
-    uint32_t i = heap->size - 1;
-    while (i > 0 && grid[heap->data[i]].distance < grid[heap->data[PARENT(i)]].distance) {
-        swap(&heap->data[PARENT(i)], &heap->data[i]);
-        i = PARENT(i);
-    }
-}
-
-static inline void minIndexHeapify(IndexHeap *heap, uint32_t n) {
-    uint32_t left = LEFT(n);
-    uint32_t right = RIGHT(n);
-
-    uint32_t minPos;
-    if (left < heap->size && grid[heap->data[left]].distance < grid[heap->data[n]].distance) {
-        minPos = left;
-    } else {
-        minPos = n;
-    }
-    if (right < heap->size && grid[heap->data[right]].distance < grid[heap->data[minPos]].distance) {
-        minPos = right;
-    }
-
-    if (minPos != n) {
-        swap(&heap->data[n], &heap->data[minPos]);
-        minIndexHeapify(heap, minPos);
-    }
-}
-
-static inline uint32_t removeIndexHeap(IndexHeap *heap) {
-    if (heap->size < 1) {
-        return UINT32_MAX;
-    }
-
-    uint32_t min = heap->data[0];
-    heap->size--;
-    heap->data[0] = heap->data[heap->size];
-    minIndexHeapify(heap, 0);
-    return min;
-}
-
-static inline uint32_t minIndexHeap(IndexHeap *heap) {
-    return heap->data[0];
-}
-
-static inline void indexHeapDecreaseKey(IndexHeap *heap, uint32_t i, uint32_t cost) {
-    if (cost >= grid[heap->data[i]].distance) {
-        return;
-    }
-
-    grid[heap->data[i]].distance = cost;
-    while (i > 0 && grid[heap->data[i]].distance < grid[heap->data[PARENT(i)]].distance) {
-        swap(&heap->data[PARENT(i)], &heap->data[i]);
-        i = PARENT(i);
-    }
-}
-
-static inline int isEmptyIndexHeap(IndexHeap* heap) {
-    return heap->size == 0;
-}
-
-static inline void freeIndexHeap(IndexHeap *heap)
-{
-    if (!heap) {
-        return;
-    }
-
-    free(heap->data);
-    heap->data = NULL;
-    heap->size = 0;
-}
-
 #define BUCKET_SIZE 101
 typedef struct {
     uint32_t head[BUCKET_SIZE];
@@ -341,35 +178,47 @@ typedef struct {
 } Bucket;
 
 Bucket bucket;
+uint8_t bucketVersion = 0;
 
 static inline void initializeBucket() {
-    for (uint32_t i = 0; i < BUCKET_SIZE; i++) {
-        bucket.head[i] = UINT32_MAX;
-    }
+    bucketVersion++;
 
-    for (uint32_t i = 0; i < size; i++) {
-        grid[i].bucketIndex = UINT8_MAX;
-        grid[i].bucketNext = UINT32_MAX;
+    if (bucketVersion == 0) {
+        for (uint32_t i = 0; i < size; i++) {
+            grid[i].bucketVersion = 0;
+        }
+        bucketVersion = 1;
     }
 
     bucket.count = 0;
     bucket.current = 0;
     bucket.distance = 0;
+    memset(bucket.head, 0xFF, sizeof bucket.head);
 }
 
 static inline void pushBucket(uint32_t value) {
-    uint8_t oldBucket = grid[value].bucketIndex;
+    uint8_t oldVersion = grid[value].bucketVersion;
 
-    if (oldBucket != UINT8_MAX) {
-        uint32_t *temp = &bucket.head[oldBucket];
+    if (oldVersion != bucketVersion) {
+        grid[value].bucketIndex = UINT8_MAX;
+        grid[value].bucketNext = UINT32_MAX;
+        grid[value].bucketVersion = bucketVersion;
+    }
 
-        while (*temp != UINT32_MAX && *temp != value) {
-            temp = &grid[*temp].bucketNext;
-        }
+    if (oldVersion == bucketVersion) {
+        uint8_t oldBucket = grid[value].bucketIndex;
 
-        if (*temp == value) {
-            *temp = grid[value].bucketNext;
-            bucket.count--;
+        if (oldBucket != UINT8_MAX) {
+            uint32_t *temp = &bucket.head[oldBucket];
+
+            while (*temp != UINT32_MAX && *temp != value) {
+                temp = &grid[*temp].bucketNext;
+            }
+
+            if (*temp == value) {
+                *temp = grid[value].bucketNext;
+                bucket.count--;
+            }
         }
     }
 
@@ -400,19 +249,6 @@ static inline uint8_t isEmptyBucket() {
     return bucket.count == 0;
 }
 
-/*Wrapping and unwrapping a 16b into a 32b int*/
-static inline uint32_t wrap(uint16_t high, uint16_t low) {
-    return (high << 16) | low;
-}
-
-static inline uint16_t unwrapHigh(uint32_t data) {
-    return data >> 16;
-}
-
-static inline uint16_t unwrapLow(uint32_t data) {
-    return data & 0xFFFF;
-}
-
 /*Operations*/
 void init(uint32_t columns, uint32_t rows);
 void changeCost(int x, int y, int8_t param, uint16_t radius);
@@ -436,18 +272,17 @@ static inline int floorDiv(int a, int b);
 static inline void activateAirRoute(uint32_t hex1Index, uint32_t hex2Index, int32_t sum);
 static inline void removeAirRoute(uint32_t hex1Index, uint32_t hex2Index, uint8_t position);
 static inline void swap(uint32_t *x1, uint32_t *x2);
-static inline void swap8bit(uint8_t *x1, uint8_t *x2);
-
-//?TEST ONLY
-static inline void printGrid();
 
 int main() {
+    uint8_t *geri = NULL;
     char buf[256];
 
     while (fgets(buf, sizeof buf, stdin)) {
         dispatchInput(buf);
     }
+
     free(grid);
+    free(geri);
     return 0;
 }
 
@@ -496,21 +331,6 @@ static void dispatchInput(const char *line){
         break;
     default:
         fprintf(stderr,"KO: %s not a command\n",cmd);
-    }
-}
-
-static inline void printGrid()
-{
-    for (uint32_t row = 0; row < rowsSize; ++row) {
-
-        /* se la riga è dispari, sfalsala di due spazi */
-        if (row & 1) printf("  ");
-
-        for (uint32_t col = 0; col < columnsSize; ++col) {
-            uint32_t idx = row * columnsSize + col;
-            printf("%2u ", grid[idx].landCost);   /* due cifre allineate */
-        }
-        putchar('\n');
     }
 }
 

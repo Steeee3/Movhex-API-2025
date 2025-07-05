@@ -1,3 +1,0 @@
-init 2 71602
-change_cost 1 66852 -9 69
-travel_cost 1 66912 1 32553

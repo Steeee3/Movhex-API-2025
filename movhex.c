@@ -36,19 +36,19 @@ static inline void swap8bit(uint8_t *x1, uint8_t *x2) {
 /*Grid and hexagons*/
 
 typedef struct {
-    /* ------------- hexagon data ------------- */
-    uint8_t landCost;
-    uint8_t airRoutesNum;
+    /*hexagon data*/
     uint32_t airRoutes[5];
-    uint8_t airRoutesCost[5];
-    uint8_t color;
-
-    /* ------------- for fast queries ------------- */
+    /*for fast queries*/
     uint32_t distance;
     uint32_t version;
-
-    /* ------------- for bucket ------------- */
+    /*for bucket*/
     uint32_t bucketNext;
+
+    /*hexagon data*/
+    uint8_t landCost;
+    uint8_t airRoutesNum;
+    uint8_t color;
+    /*for bucket*/
     uint8_t bucketIndex;
 } Hex;
 
@@ -94,6 +94,22 @@ static inline uint32_t axialToLinear(int32_t r, int32_t q);
 static inline Axial offsetToAxial(uint32_t x, uint32_t y);
 static inline Offset axialToOffset(uint32_t r, int32_t q);
 static inline Offset linearToOffset(uint32_t index);
+
+static inline void setAirRoute(Hex* hexagon, uint8_t routeIndex, uint32_t destination, uint8_t cost) {
+    hexagon->airRoutes[routeIndex] = (destination << 8) | cost;
+}
+
+static inline void setAirRouteCost(Hex* hexagon, uint8_t routeIndex, uint8_t cost) {
+    hexagon->airRoutes[routeIndex] = (hexagon->airRoutes[routeIndex] & 0xFFFFFF00u) | cost;
+}
+
+static inline uint32_t getAirRouteDestination(Hex* hexagon, uint8_t routeIndex) {
+    return (hexagon->airRoutes[routeIndex] >> 8);
+}
+
+static inline uint32_t getAirRouteCost(Hex* hexagon, uint8_t routeIndex) {
+    return (uint8_t) hexagon->airRoutes[routeIndex];
+}
 
 static inline AdjacentsLinear findAdjacentsOffset(int32_t x, int32_t y) {
     AdjacentsLinear adjacents;
@@ -671,18 +687,14 @@ void changeHexCost(Hex* hexagon, int8_t param, uint16_t radius) {
     }
 
     for (int i = 0; i < hexagon->airRoutesNum; i++) {
-        newCost = hexagon->airRoutesCost[i] + delta;
-
-        if (newCost >= 0 && newCost <= 100) {
-            hexagon->airRoutesCost[i] = newCost;
-        }
+        newCost = getAirRouteCost(hexagon, i) + delta;
 
         if (newCost <= 0) {
-            hexagon->airRoutesCost[i] = 1;
+            setAirRouteCost(hexagon, i, 1);
         } else if (newCost > 100) {
-            hexagon->airRoutesCost[i] = 100;
+            setAirRouteCost(hexagon, i, 100);
         } else {
-            hexagon->airRoutesCost[i] = newCost;
+            setAirRouteCost(hexagon, i, newCost);
         }
     }
 }
@@ -702,9 +714,9 @@ void toggleAirRoute(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
     printf("OK\n");
 
     int32_t sum = grid[hex1Index].landCost;
-    for (int i = 0; i < grid[hex1Index].airRoutesNum; i++) {
-        if (grid[hex1Index].airRoutes[i] == hex2Index) {
-            sum += grid[hex1Index].airRoutesCost[i];
+    for (uint8_t i = 0; i < grid[hex1Index].airRoutesNum; i++) {
+        if (getAirRouteDestination(&grid[hex1Index], i) == hex2Index) {
+            sum += getAirRouteCost(&grid[hex1Index], i);
             removeAirRoute(hex1Index, hex2Index, i);
             return;
         }
@@ -717,15 +729,14 @@ static inline void activateAirRoute(uint32_t hex1Index, uint32_t hex2Index, int3
 
     average = sum / (grid[hex1Index].airRoutesNum + 1);
 
-    grid[hex1Index].airRoutes[grid[hex1Index].airRoutesNum] = hex2Index;
-    grid[hex1Index].airRoutesCost[grid[hex1Index].airRoutesNum] = average;
+    setAirRoute(&grid[hex1Index], grid[hex1Index].airRoutesNum, hex2Index, average);
+
     grid[hex1Index].airRoutesNum++;
 }
 
 static inline void removeAirRoute(uint32_t hex1Index, uint32_t hex2Index, uint8_t position) {
     for (int i = position; i < grid[hex1Index].airRoutesNum - 1; i++) {
         swap(&grid[hex1Index].airRoutes[i], &grid[hex1Index].airRoutes[i + 1]);
-        swap8bit(&grid[hex1Index].airRoutesCost[i], &grid[hex1Index].airRoutesCost[i + 1]);
     }
 
     grid[hex1Index].airRoutesNum--;
@@ -795,9 +806,9 @@ void travelCost(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
         }
 
         for (int i = 0; i < grid[hexIndex].airRoutesNum; i++) {
-            newDistance = grid[hexIndex].distance + grid[hexIndex].airRoutesCost[i];
+            newDistance = grid[hexIndex].distance + getAirRouteCost(&grid[hexIndex], i);
 
-            uint32_t adjIndex = grid[hexIndex].airRoutes[i];
+            uint32_t adjIndex = getAirRouteDestination(&grid[hexIndex], i);
             if (grid[adjIndex].version != currentVersion) {
                 grid[adjIndex].distance = UINT32_MAX;
                 grid[adjIndex].version = currentVersion;

@@ -24,10 +24,7 @@ The program is designed to process thousands of queries with maximum efficiency.
 
 Below is a conceptual representation of part of the hexagonal grid layout (4 rows × 5 columns):
 
-   (0,3)   (1,3)   (2,3)   (3,3)   (4,3)
-(0,2)   (1,2)   (2,2)   (3,2)   (4,2)
-   (0,1)   (1,1)   (2,1)   (3,1)   (4,1)
-(0,0)   (1,0)   (2,0)   (3,0)   (4,0)
+![Hex map layout](./specifiche/images/hex.png)
 
 
 Note: Tiles are indexed as `(column, row)`, starting from bottom-left `(0,0)`.
@@ -36,7 +33,7 @@ Note: Tiles are indexed as `(column, row)`, starting from bottom-left `(0,0)`.
 
 ## Features
 
-- ✅ Dynamic grid initialization (up to 2^20 rows or columns)
+- ✅ Dynamic grid initialization
 - ✅ Efficient shortest-path search using **Dial's Algorithm** (bucket queue)
 - ✅ Air route toggling with automatic average cost computation
 - ✅ Radius-based terrain cost propagation (influences both land and air)
@@ -62,4 +59,4 @@ All commands are read from **stdin**, one per line. Each response is printed to 
 You can compile the program with any modern C compiler. Example using `gcc`:
 
 ```bash
-gcc -O2 -std=gnu11 -Wall -Wextra -o movhex movhex.c
+gcc -Wall -Werror -std=gnu11 -O2 -lm movhex.c -o movhex

@@ -7,8 +7,6 @@
 #define GREY 1
 #define BLACK 2
 
-#define max(a,b) ((a) > (b) ? (a) : (b))
-
 /*Coordinates*/
 typedef struct {
     uint32_t x;
